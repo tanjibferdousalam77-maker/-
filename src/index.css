@@ -1,0 +1,26 @@
+@import "tailwindcss";
+
+@layer base {
+  html, body, #root {
+    width: 100%;
+    height: 100%;
+    margin: 0;
+    padding: 0;
+    overflow: hidden;
+    user-select: none;
+    -webkit-user-select: none;
+    touch-action: none;
+    font-family: 'Plus Jakarta Sans', 'Hind Siliguri', -apple-system, BlinkMacSystemFont, sans-serif;
+    background-color: #1e1b18;
+  }
+}
+
+/* Custom scrollbars and animations */
+@keyframes coin-fly {
+  0% { transform: translateY(0) scale(1); opacity: 1; }
+  100% { transform: translateY(-40px) scale(1.2); opacity: 0; }
+}
+
+.animate-coin-fly {
+  animation: coin-fly 0.7s cubic-bezier(0.16, 1, 0.3, 1) forwards;
+}

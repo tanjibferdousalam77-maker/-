@@ -1,0 +1,6 @@
+{
+  "name": "Dhaka Snack Ready! (ঢাকা স্ন্যাকস রেডি)",
+  "description": "Isometric 3D arcade idle tycoon game set in Bangladesh. Fry and stack Puri, Singara, Samosa, and Jilapi, serve customers, hire Mama helpers, and expand your Dhaka street food empire!",
+  "requestFramePermissions": [],
+  "majorCapabilities": ["MAJOR_CAPABILITY_SERVER_SIDE_GEMINI_API"]
+}
