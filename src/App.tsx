@@ -1,3 +1,4 @@
+import { useState, useCallback } from 'react';
 import { useGameEngine } from './hooks/useGameEngine';
 import { GameCanvas } from './components/GameCanvas';
 import { VirtualJoystick } from './components/VirtualJoystick';
@@ -12,15 +13,13 @@ export default function App() {
     playerSpeedLevel,
     playerCapacityLevel,
     maxStackCapacity,
+    moveSpeed,
     unlockedStations,
     unlockedTables,
     rickshawUnlocked,
     rickshawOrder,
     staff,
     playerStack,
-    playerPosition,
-    playerAngle,
-    isMoving,
     warmerStock,
     upgradePads,
     tables,
@@ -29,7 +28,7 @@ export default function App() {
     staffEntities,
     rushHourActive,
     rushHourProgress,
-    setInputVector,
+    updatePlayerPosFromScene,
     upgradePlayerSpeed,
     upgradePlayerCapacity,
     upgradeStaffLevel,
@@ -37,13 +36,18 @@ export default function App() {
     resetGame,
   } = useGameEngine();
 
+  const [inputVector, setInputVectorState] = useState<{ vx: number; vz: number }>({ vx: 0, vz: 0 });
+
+  const handleMoveInput = useCallback((vx: number, vz: number) => {
+    setInputVectorState({ vx, vz });
+  }, []);
+
   return (
-    <div className="relative w-screen h-screen overflow-hidden bg-[#181512] font-['Plus_Jakarta_Sans','Hind_Siliguri',sans-serif]">
-      {/* 1. 3D Isometric Viewport */}
+    <div className="relative w-screen h-screen overflow-hidden bg-[#181512] font-['Plus_Jakarta_Sans',sans-serif]">
+      {/* 1. 3D Isometric Viewport with high performance physics */}
       <GameCanvas
-        playerPosition={playerPosition}
-        playerAngle={playerAngle}
-        isMoving={isMoving}
+        inputVector={inputVector}
+        playerSpeed={moveSpeed}
         playerStack={playerStack}
         unlockedStations={unlockedStations}
         tables={tables}
@@ -53,7 +57,7 @@ export default function App() {
         warmerStock={warmerStock}
         customers={customers}
         staffEntities={staffEntities}
-        playerSpeedRatio={1 + (playerSpeedLevel - 1) * 0.25}
+        onSyncPlayerPos={updatePlayerPosFromScene}
       />
 
       {/* 2. Top HUD Overlay */}
@@ -71,11 +75,11 @@ export default function App() {
       {/* 3. Rickshaw Delivery Notification */}
       <RickshawNotification order={rickshawOrder} />
 
-      {/* 4. Virtual Joystick (Touch + Mouse Drag) */}
-      <VirtualJoystick onMove={setInputVector} />
+      {/* 4. Virtual Joystick (Smooth Touch + Mouse Drag) */}
+      <VirtualJoystick onMove={handleMoveInput} />
 
-      {/* 5. Desktop Keyboard Helper Badge (Bottom Right) */}
-      <div className="hidden lg:flex fixed bottom-4 right-4 z-20 flex-col items-end gap-1 px-3 py-2 rounded-xl bg-slate-900/80 backdrop-blur-md border border-slate-800 text-[11px] text-slate-400 pointer-events-none select-none">
+      {/* 5. Desktop Keyboard Helper Badge */}
+      <div className="hidden lg:flex fixed bottom-4 right-4 z-20 flex-col items-end gap-1 px-3 py-2 rounded-xl bg-slate-900/85 backdrop-blur-md border border-slate-800 text-[11px] text-slate-400 pointer-events-none select-none">
         <div className="flex items-center gap-1.5 text-slate-300 font-medium">
           <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300 font-mono text-[10px]">
             W
@@ -89,9 +93,9 @@ export default function App() {
           <kbd className="px-1.5 py-0.5 rounded bg-slate-800 border border-slate-700 text-amber-300 font-mono text-[10px]">
             D
           </kbd>
-          <span>বা এরো কি দিয়ে চালান</span>
+          <span>or Arrow keys to move</span>
         </div>
-        <span className="text-[10px] text-slate-500">মেঝেতে দাঁড়িয়ে নতুন জিনিস আনলক করুন</span>
+        <span className="text-[10px] text-slate-500">Walk onto circular pads to upgrade</span>
       </div>
 
       {/* 6. Collapsible Bottom Upgrade Dock */}

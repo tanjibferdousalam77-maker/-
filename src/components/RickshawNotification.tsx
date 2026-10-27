@@ -11,9 +11,9 @@ export function RickshawNotification({ order }: RickshawNotificationProps) {
     <div className="fixed top-16 right-3 md:right-6 z-30 pointer-events-none select-none max-w-xs animate-bounce">
       <div className="p-3 rounded-2xl bg-slate-900/95 backdrop-blur-md border-2 border-amber-500/80 shadow-2xl text-slate-100 flex flex-col gap-2">
         <div className="flex items-center justify-between">
-          <div className="flex items-center gap-1.5 font-bold text-amber-400 text-xs font-['Hind_Siliguri']">
+          <div className="flex items-center gap-1.5 font-bold text-amber-400 text-xs">
             <span className="text-base">🛺</span>
-            <span>রিকশা ডেলিভারি এসেছে!</span>
+            <span>Rickshaw Delivery Arrived!</span>
           </div>
           <span className="font-mono text-emerald-400 font-bold text-xs">
             +৳{order.payout}
@@ -21,7 +21,7 @@ export function RickshawNotification({ order }: RickshawNotificationProps) {
         </div>
 
         <div className="text-[11px] text-slate-300">
-          ডেলিভারি উইন্ডোতে নাস্তা এনে দিন:
+          Deliver snacks to the takeaway window:
         </div>
 
         <div className="flex flex-wrap gap-1.5">

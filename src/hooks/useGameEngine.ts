@@ -16,7 +16,6 @@ import { sounds } from '../audio/soundManager';
 const SAVE_STORAGE_KEY = 'dhaka_snack_ready_save_v1';
 
 export function useGameEngine() {
-  // Load initial state from LocalStorage or defaults
   const loadInitialState = (): GameSaveState => {
     try {
       const saved = localStorage.getItem(SAVE_STORAGE_KEY);
@@ -27,7 +26,7 @@ export function useGameEngine() {
       // Ignore
     }
     return {
-      money: 45, // Starter seed capital
+      money: 50,
       reputation: 5.0,
       totalServed: 0,
       playerSpeedLevel: 1,
@@ -45,7 +44,6 @@ export function useGameEngine() {
 
   const initial = loadInitialState();
 
-  // Core Game State
   const [money, setMoney] = useState<number>(initial.money);
   const [totalServed, setTotalServed] = useState<number>(initial.totalServed);
   const [playerSpeedLevel, setPlayerSpeedLevel] = useState<number>(initial.playerSpeedLevel);
@@ -55,16 +53,12 @@ export function useGameEngine() {
   const [rickshawUnlocked, setRickshawUnlocked] = useState<boolean>(initial.rickshawUnlocked);
   const [staff, setStaff] = useState(initial.staff);
 
-  // Runtime dynamic states
   const [playerStack, setPlayerStack] = useState<FoodType[]>([]);
-  const [playerPosition, setPlayerPosition] = useState<{ x: number; z: number }>({ x: 0, z: 0 });
-  const [playerAngle, setPlayerAngle] = useState<number>(0);
-  const [isMoving, setIsMoving] = useState<boolean>(false);
   const [rushHourProgress, setRushHourProgress] = useState<number>(0);
   const [rushHourActive, setRushHourActive] = useState<boolean>(false);
   const [rickshawOrder, setRickshawOrder] = useState<RickshawOrder | null>(null);
 
-  // Stock ready on warmers (max 8 per station)
+  // Stock ready on warmers
   const [warmerStock, setWarmerStock] = useState<Record<FoodType, number>>({
     puri: 3,
     singara: 0,
@@ -73,7 +67,7 @@ export function useGameEngine() {
     cha: 0,
   });
 
-  // Upgrades pads on the restaurant floor
+  // Upgrade pads with English titles and authentic food/মামা references
   const [upgradePads, setUpgradePads] = useState<UpgradeStationPad[]>([
     {
       id: 'pad_singara',
@@ -173,7 +167,7 @@ export function useGameEngine() {
     },
     {
       id: 'pad_chef',
-      titleEn: 'Hire Chef Mama',
+      titleEn: 'Hire Chef মামা',
       titleBn: 'বাবুর্চি মামা নিয়োগ',
       cost: 200,
       paid: 0,
@@ -185,8 +179,8 @@ export function useGameEngine() {
     },
     {
       id: 'pad_waiter',
-      titleEn: 'Hire Waiter Mama',
-      titleBn: 'ওয়েটার মামা নিয়োগ',
+      titleEn: 'Hire Waiter মামা',
+      titleBn: 'সার্ভিস বয় মামা',
       cost: 280,
       paid: 0,
       type: 'STAFF',
@@ -197,7 +191,6 @@ export function useGameEngine() {
     },
   ]);
 
-  // Tables
   const [tables, setTables] = useState<DiningTable[]>([
     { id: 1, position: { x: -9, z: -2 }, isUnlocked: true, occupied: false, hasDirtyDishes: false, dishesCount: 0 },
     { id: 2, position: { x: -9, z: 3 }, isUnlocked: initial.unlockedTables.includes(2), occupied: false, hasDirtyDishes: false, dishesCount: 0 },
@@ -205,17 +198,11 @@ export function useGameEngine() {
     { id: 4, position: { x: 8, z: 3 }, isUnlocked: initial.unlockedTables.includes(4), occupied: false, hasDirtyDishes: false, dishesCount: 0 },
   ]);
 
-  // Customers
   const [customers, setCustomers] = useState<Customer[]>([]);
-
-  // Cash piles dropped on floor / tables
   const [cashPiles, setCashPiles] = useState<CashPile[]>([]);
-
-  // Hired staff entities
   const [staffEntities, setStaffEntities] = useState<MamaStaff[]>([]);
 
-  // Refs for smooth animation loop
-  const inputVectorRef = useRef<{ vx: number; vz: number }>({ vx: 0, vz: 0 });
+  // Smooth position tracking WITHOUT triggering 60 React re-renders per second
   const playerPosRef = useRef<{ x: number; z: number }>({ x: 0, z: 0 });
   const lastTransferTimeRef = useRef<number>(0);
   const lastPadTickTimeRef = useRef<number>(0);
@@ -223,11 +210,10 @@ export function useGameEngine() {
   const lastFryerTickRef = useRef<number>(0);
   const lastRickshawCheckRef = useRef<number>(0);
 
-  // Max stack capacity based on player level
   const maxStackCapacity = [4, 6, 8, 12, 16, 20][Math.min(playerCapacityLevel - 1, 5)];
-  const moveSpeed = 5.2 + (playerSpeedLevel - 1) * 1.3;
+  const moveSpeed = 5.8 + (playerSpeedLevel - 1) * 1.4;
 
-  // Sync staff entities with staff levels
+  // Sync staff entities
   useEffect(() => {
     const list: MamaStaff[] = [];
     if (staff.chefLevel > 0) {
@@ -241,7 +227,7 @@ export function useGameEngine() {
         state: 'IDLE',
         stack: [],
         capacity: 4,
-        speed: 4.5,
+        speed: 4.8,
         level: staff.chefLevel,
       });
     }
@@ -256,14 +242,14 @@ export function useGameEngine() {
         state: 'IDLE',
         stack: [],
         capacity: 4 + staff.waiterLevel * 2,
-        speed: 5.5 + staff.waiterLevel * 0.8,
+        speed: 5.6 + staff.waiterLevel * 0.8,
         level: staff.waiterLevel,
       });
     }
     setStaffEntities(list);
   }, [staff]);
 
-  // Save game automatically
+  // Auto-save
   useEffect(() => {
     const saveState: GameSaveState = {
       money,
@@ -292,12 +278,12 @@ export function useGameEngine() {
     staff,
   ]);
 
-  // Manual Trigger or Periodic Rush Hour
   const triggerRushHour = useCallback(() => {
     if (rushHourActive) return;
     setRushHourActive(true);
     setRushHourProgress(100);
     sounds.playUnlock();
+    sounds.speakBengali('বিকেলের নাস্তার ভিড় শুরু!');
     confetti({
       particleCount: 80,
       spread: 70,
@@ -314,15 +300,14 @@ export function useGameEngine() {
         }
         return prev - 2;
       });
-    }, 500); // 25 seconds total rush duration
+    }, 500);
   }, [rushHourActive]);
 
-  // Handle movement inputs from joystick / keyboard
-  const setInputVector = useCallback((vx: number, vz: number) => {
-    inputVectorRef.current = { vx, vz };
+  const updatePlayerPosFromScene = useCallback((x: number, z: number) => {
+    playerPosRef.current.x = x;
+    playerPosRef.current.z = z;
   }, []);
 
-  // Upgrade handler for Bottom Drawer UI
   const upgradePlayerSpeed = useCallback(() => {
     const cost = playerSpeedLevel * 100;
     if (money >= cost && playerSpeedLevel < 5) {
@@ -357,6 +342,7 @@ export function useGameEngine() {
           [`${role}Level`]: current + 1,
         }));
         sounds.playUnlock();
+        sounds.speakBengali('মামা যোগ দিয়েছেন!');
       }
     },
     [money, staff]
@@ -367,7 +353,7 @@ export function useGameEngine() {
     window.location.reload();
   }, []);
 
-  // Main simulation tick loop (60 FPS)
+  // Main simulation tick loop (throttled to 10 FPS for transfers/AI, Three.js handles 60 FPS movement)
   useEffect(() => {
     let animId: number;
     let lastTime = performance.now();
@@ -384,39 +370,10 @@ export function useGameEngine() {
       const dt = Math.min((currentTime - lastTime) / 1000, 0.1);
       lastTime = currentTime;
 
-      // 1. Move Player
-      const { vx, vz } = inputVectorRef.current;
-      const length = Math.hypot(vx, vz);
-      const isCurrentlyMoving = length > 0.05;
-      setIsMoving(isCurrentlyMoving);
-
-      if (isCurrentlyMoving) {
-        const nx = vx / length;
-        const nz = vz / length;
-        const speed = moveSpeed;
-
-        let newX = playerPosRef.current.x + nx * speed * dt;
-        let newZ = playerPosRef.current.z + nz * speed * dt;
-
-        // Boundaries: Keep player inside cafe layout
-        newX = Math.max(-16.5, Math.min(16.5, newX));
-        newZ = Math.max(-13.5, Math.min(8.2, newZ));
-
-        // Avoid walking through the front counter
-        if (newZ >= 3.8 && newZ <= 5.2 && Math.abs(newX) < 2.5) {
-          // Push player back
-          newZ = playerPosRef.current.z;
-        }
-
-        playerPosRef.current = { x: newX, z: newZ };
-        setPlayerPosition({ x: newX, z: newZ });
-        setPlayerAngle(Math.atan2(nx, nz));
-      }
-
       const px = playerPosRef.current.x;
       const pz = playerPosRef.current.z;
 
-      // 2. Fryer Production Cycle: Auto cook snacks when warmer < 8
+      // 1. Fryer cooking cycle
       if (currentTime - lastFryerTickRef.current > 1800) {
         lastFryerTickRef.current = currentTime;
         const chefBonus = staff.chefLevel > 0 ? 1 : 0;
@@ -432,18 +389,16 @@ export function useGameEngine() {
         });
       }
 
-      // 3. Stacking items onto Player from Warmers
-      if (currentTime - lastTransferTimeRef.current > 140) {
+      // 2. Pickup from Warmers
+      if (currentTime - lastTransferTimeRef.current > 130) {
         unlockedStations.forEach((type) => {
           const sPos = stationCoordinates[type];
           const dist = Math.hypot(px - sPos.x, pz - sPos.z);
-          // Warmer pickup zone
           if (dist < 2.0 && warmerStock[type] > 0) {
             setPlayerStack((stack) => {
               if (stack.length < maxStackCapacity) {
                 lastTransferTimeRef.current = currentTime;
                 sounds.playStackPop(stack.length + 1);
-                // Deduct from warmer
                 setWarmerStock((ws) => ({
                   ...ws,
                   [type]: Math.max(0, ws[type] - 1),
@@ -456,23 +411,21 @@ export function useGameEngine() {
         });
       }
 
-      // 4. Serving Counter Customers
+      // 3. Serving Counter Customers
       const isNearCounter = pz >= 2.6 && pz <= 4.2 && Math.abs(px) < 3.2;
-      if (isNearCounter && currentTime - lastTransferTimeRef.current > 140) {
+      if (isNearCounter && currentTime - lastTransferTimeRef.current > 130) {
         setCustomers((prevCustomers) => {
           let updated = false;
           const nextCustomers = prevCustomers.map((cust) => {
             if (cust.state === 'WAITING' && cust.type === 'COUNTER' && !updated) {
               const req = cust.order.required - cust.order.delivered;
               if (req > 0) {
-                // Check if player has this item
                 const itemIdx = playerStack.indexOf(cust.order.itemType);
                 if (itemIdx !== -1) {
                   updated = true;
                   lastTransferTimeRef.current = currentTime;
                   sounds.playDeliver();
 
-                  // Remove 1 item from player stack
                   setPlayerStack((st) => {
                     const c = [...st];
                     c.splice(itemIdx, 1);
@@ -481,7 +434,6 @@ export function useGameEngine() {
 
                   const newDelivered = cust.order.delivered + 1;
                   if (newDelivered >= cust.order.required) {
-                    // Order fulfilled! Drop cash and customer leaves
                     const def = FOOD_DEFINITIONS[cust.order.itemType];
                     const earnings = def.sellPrice * cust.order.required * (rushHourActive ? 2 : 1);
                     setCashPiles((cp) => [
@@ -506,12 +458,11 @@ export function useGameEngine() {
         });
       }
 
-      // 5. Serving Dine-In Tables
+      // 4. Serving Dine-In Tables
       tables.forEach((table) => {
         if (!table.isUnlocked) return;
         const dist = Math.hypot(px - table.position.x, pz - table.position.z);
-        if (dist < 2.2 && currentTime - lastTransferTimeRef.current > 140) {
-          // Check if table customer needs food
+        if (dist < 2.2 && currentTime - lastTransferTimeRef.current > 130) {
           setCustomers((prevCustomers) => {
             let updated = false;
             return prevCustomers.map((cust) => {
@@ -531,7 +482,6 @@ export function useGameEngine() {
 
                   const newDelivered = cust.order.delivered + 1;
                   if (newDelivered >= cust.order.required) {
-                    // Start eating!
                     return {
                       ...cust,
                       state: 'EATING' as const,
@@ -548,12 +498,11 @@ export function useGameEngine() {
         }
       });
 
-      // 6. Clearing Dirty Dishes from Tables to Trash Bin
+      // 5. Clearing Dirty Dishes
       tables.forEach((table) => {
         if (table.hasDirtyDishes) {
           const dist = Math.hypot(px - table.position.x, pz - table.position.z);
           if (dist < 2.2) {
-            // Clean table
             setTables((tbls) =>
               tbls.map((t) => (t.id === table.id ? { ...t, hasDirtyDishes: false, occupied: false } : t))
             );
@@ -562,21 +511,20 @@ export function useGameEngine() {
         }
       });
 
-      // 7. Collecting Cash ৳ Bills
+      // 6. Cash Pickups
       cashPiles.forEach((cash) => {
         if (!cash.collected) {
           const dist = Math.hypot(px - cash.position.x, pz - cash.position.z);
-          if (dist < 1.8) {
+          if (dist < 1.9) {
             cash.collected = true;
             setMoney((m) => m + cash.amount);
             sounds.playCash();
           }
         }
       });
-      // Clean up collected piles
       setCashPiles((cp) => cp.filter((c) => !c.collected));
 
-      // 8. Stepping on Standing Upgrade Pads
+      // 7. Standing Upgrade Pads
       if (currentTime - lastPadTickTimeRef.current > 100) {
         upgradePads.forEach((pad) => {
           if (!pad.isUnlocked) {
@@ -594,11 +542,9 @@ export function useGameEngine() {
                     if (p.id === pad.id) {
                       const newPaid = p.paid + deduct;
                       if (newPaid >= p.cost) {
-                        // Unlocked!
                         sounds.playUnlock();
                         confetti({ particleCount: 50, spread: 60, origin: { y: 0.7 } });
 
-                        // Apply unlocked effect
                         if (p.type === 'FOOD_STATION') {
                           setUnlockedStations((st) => Array.from(new Set([...st, p.targetId as FoodType])));
                         } else if (p.type === 'TABLE') {
@@ -629,15 +575,13 @@ export function useGameEngine() {
         });
       }
 
-      // 9. Customer Eating & Lifecycle Update
+      // 8. Customer Eating & Move Cycle
       setCustomers((prevCustomers) => {
         return prevCustomers
           .map((cust) => {
-            // Eating countdown
             if (cust.state === 'EATING') {
               const nextEatTimer = cust.eatTimer - dt;
               if (nextEatTimer <= 0) {
-                // Done eating! Drops big cash tip & leaves dirty table
                 sounds.playEatChomp();
                 const def = FOOD_DEFINITIONS[cust.order.itemType];
                 const tipAmount = Math.round(def.sellPrice * cust.order.required * 1.5);
@@ -662,12 +606,16 @@ export function useGameEngine() {
               return { ...cust, eatTimer: nextEatTimer };
             }
 
-            // Move customers toward target
             if (cust.state === 'WALKING_IN') {
               const dx = cust.targetPosition.x - cust.position.x;
               const dz = cust.targetPosition.z - cust.position.z;
               const dist = Math.hypot(dx, dz);
               if (dist < 0.2) {
+                // Customer order voice callout
+                const def = FOOD_DEFINITIONS[cust.order.itemType];
+                if (Math.random() > 0.5) {
+                  sounds.speakBengali(`মামা, ${def.nameBn} দেন!`);
+                }
                 return { ...cust, state: 'WAITING' as const };
               }
               return {
@@ -681,10 +629,10 @@ export function useGameEngine() {
 
             if (cust.state === 'LEAVING') {
               const dx = 0 - cust.position.x;
-              const dz = 16 - cust.position.z; // walk out to sidewalk
+              const dz = 16 - cust.position.z;
               const dist = Math.hypot(dx, dz);
               if (dist < 0.4 || cust.position.z >= 15.5) {
-                return null; // remove from scene
+                return null;
               }
               return {
                 ...cust,
@@ -700,22 +648,18 @@ export function useGameEngine() {
           .filter(Boolean) as Customer[];
       });
 
-      // 10. Customer Spawner
-      const spawnInterval = rushHourActive ? 1600 : 3600;
+      // 9. Customer Spawner
+      const spawnInterval = rushHourActive ? 1500 : 3400;
       if (currentTime - lastCustomerSpawnTimeRef.current > spawnInterval) {
         lastCustomerSpawnTimeRef.current = currentTime;
 
-        // Choose between Counter or Dine-In Table
         const freeTable = tables.find((t) => t.isUnlocked && !t.occupied && !t.hasDirtyDishes);
         const shouldDineIn = freeTable && Math.random() > 0.45;
-
-        // Available snacks to order
         const availableItems = unlockedStations;
         const orderedItem = availableItems[Math.floor(Math.random() * availableItems.length)];
-        const orderCount = Math.floor(Math.random() * 2) + 1; // 1 or 2 items
+        const orderCount = Math.floor(Math.random() * 2) + 1;
 
         if (shouldDineIn && freeTable) {
-          // Mark table as occupied
           setTables((tb) => tb.map((t) => (t.id === freeTable.id ? { ...t, occupied: true } : t)));
           setCustomers((custs) => [
             ...custs,
@@ -735,7 +679,6 @@ export function useGameEngine() {
             },
           ]);
         } else {
-          // Counter line
           const counterCount = customers.filter((c) => c.type === 'COUNTER' && c.state !== 'LEAVING').length;
           if (counterCount < 4) {
             const queueZ = 6.2 + counterCount * 1.5;
@@ -759,7 +702,7 @@ export function useGameEngine() {
         }
       }
 
-      // 11. Rickshaw Delivery Arrival (Every 25 seconds if unlocked)
+      // 10. Rickshaw Takeaway Delivery
       if (rickshawUnlocked && currentTime - lastRickshawCheckRef.current > 24000) {
         lastRickshawCheckRef.current = currentTime;
         if (!rickshawOrder) {
@@ -780,11 +723,9 @@ export function useGameEngine() {
         }
       }
 
-      // Rickshaw dropoff check
       if (rickshawOrder && rickshawOrder.active) {
         const dist = Math.hypot(px - 12.5, pz - 4.5);
-        if (dist < 2.5 && currentTime - lastTransferTimeRef.current > 140) {
-          // Check if player has any matching items
+        if (dist < 2.5 && currentTime - lastTransferTimeRef.current > 130) {
           for (const item of rickshawOrder.items) {
             if (item.delivered < item.required) {
               const idx = playerStack.indexOf(item.itemType);
@@ -798,7 +739,6 @@ export function useGameEngine() {
                 });
                 item.delivered += 1;
 
-                // Check if all complete
                 const isAllDone = rickshawOrder.items.every((it) => it.delivered >= it.required);
                 if (isAllDone) {
                   sounds.playCash();
@@ -814,19 +754,15 @@ export function useGameEngine() {
         }
       }
 
-      // 12. Waiter Mama Automation (Runs from warmers to customers)
+      // 11. Waiter Mama Automated Runner
       if (staff.waiterLevel > 0) {
         setStaffEntities((staffs) =>
           staffs.map((st) => {
             if (st.role !== 'WAITER') return st;
-
-            // Simple state machine: if empty, find warmer that has stock.
-            // If has food, deliver to waiting customer or table!
             let newX = st.position.x;
             let newZ = st.position.z;
 
             if (st.stack.length === 0) {
-              // Move towards first warmer with stock
               const targetType = unlockedStations.find((t) => warmerStock[t] > 0);
               if (targetType) {
                 const sPos = stationCoordinates[targetType];
@@ -837,14 +773,12 @@ export function useGameEngine() {
                   newX += (dx / d) * st.speed * dt;
                   newZ += (dz / d) * st.speed * dt;
                 } else {
-                  // Pickup 2 items
                   setWarmerStock((ws) => ({ ...ws, [targetType]: Math.max(0, ws[targetType] - 2) }));
                   sounds.playStackPop(2);
                   return { ...st, stack: [targetType, targetType], position: { x: newX, z: newZ } };
                 }
               }
             } else {
-              // Deliver to counter
               const dx = 0 - st.position.x;
               const dz = 3.5 - st.position.z;
               const d = Math.hypot(dx, dz);
@@ -852,8 +786,6 @@ export function useGameEngine() {
                 newX += (dx / d) * st.speed * dt;
                 newZ += (dz / d) * st.speed * dt;
               } else {
-                // Drop to customer
-                const handed = st.stack[0];
                 sounds.playDeliver();
                 return { ...st, stack: st.stack.slice(1), position: { x: newX, z: newZ } };
               }
@@ -893,15 +825,13 @@ export function useGameEngine() {
     playerSpeedLevel,
     playerCapacityLevel,
     maxStackCapacity,
+    moveSpeed,
     unlockedStations,
     unlockedTables,
     rickshawUnlocked,
     rickshawOrder,
     staff,
     playerStack,
-    playerPosition,
-    playerAngle,
-    isMoving,
     warmerStock,
     upgradePads,
     tables,
@@ -910,7 +840,7 @@ export function useGameEngine() {
     staffEntities,
     rushHourActive,
     rushHourProgress,
-    setInputVector,
+    updatePlayerPosFromScene,
     upgradePlayerSpeed,
     upgradePlayerCapacity,
     upgradeStaffLevel,

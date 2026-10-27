@@ -1,14 +1,14 @@
 /**
- * Procedural Web Audio API Sound Synthesizer
+ * Procedural Web Audio API Sound Synthesizer & Bengali Street Voice System
  * Generates crisp, realistic arcade sound effects with zero external audio assets.
  */
 
 class SoundManager {
   private ctx: AudioContext | null = null;
   public isMuted: boolean = false;
+  private lastSpeechTime: number = 0;
 
   constructor() {
-    // Read mute preference from localStorage
     try {
       const saved = localStorage.getItem('dhaka_snack_sound_muted');
       if (saved !== null) {
@@ -21,7 +21,9 @@ class SoundManager {
 
   private initContext() {
     if (!this.ctx && typeof window !== 'undefined') {
-      const AudioCtx = window.AudioContext || (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
+      const AudioCtx =
+        window.AudioContext ||
+        (window as unknown as { webkitAudioContext: typeof AudioContext }).webkitAudioContext;
       if (AudioCtx) {
         this.ctx = new AudioCtx();
       }
@@ -42,6 +44,36 @@ class SoundManager {
   }
 
   /**
+   * Authentic Bengali Voice Lines (TTS / Formant)
+   */
+  public speakBengali(phrase: string, pitch = 1.05) {
+    if (this.isMuted) return;
+    if (typeof window === 'undefined' || !window.speechSynthesis) return;
+
+    // Rate-limit speech so it doesn't overlap excessively
+    const now = performance.now();
+    if (now - this.lastSpeechTime < 2400) return;
+    this.lastSpeechTime = now;
+
+    try {
+      const utterance = new SpeechSynthesisUtterance(phrase);
+      utterance.lang = 'bn-BD';
+      utterance.pitch = pitch;
+      utterance.rate = 1.15;
+      utterance.volume = 0.85;
+
+      // Check if Bengali voice is installed, else use default
+      const voices = window.speechSynthesis.getVoices();
+      const bnVoice = voices.find((v) => v.lang.includes('bn') || v.lang.includes('IN'));
+      if (bnVoice) utterance.voice = bnVoice;
+
+      window.speechSynthesis.speak(utterance);
+    } catch {
+      // Graceful fallback if speech synthesis is disabled on device
+    }
+  }
+
+  /**
    * Stacking Pop Sound
    * Pitch dynamically increases with each stacked item (like Pizza Ready!)
    */
@@ -54,8 +86,7 @@ class SoundManager {
     const osc = this.ctx.createOscillator();
     const gain = this.ctx.createGain();
 
-    // Base pitch ~320Hz, increases with stack height
-    const baseFreq = 320;
+    const baseFreq = 340;
     const clampedHeight = Math.min(stackHeight, 20);
     const targetFreq = baseFreq * Math.pow(1.08, clampedHeight);
 
@@ -63,7 +94,7 @@ class SoundManager {
     osc.frequency.setValueAtTime(targetFreq * 0.7, now);
     osc.frequency.exponentialRampToValueAtTime(targetFreq, now + 0.05);
 
-    gain.gain.setValueAtTime(0.18, now);
+    gain.gain.setValueAtTime(0.2, now);
     gain.gain.exponentialRampToValueAtTime(0.001, now + 0.12);
 
     osc.connect(gain);
@@ -82,26 +113,24 @@ class SoundManager {
     if (!this.ctx) return;
 
     const now = this.ctx.currentTime;
-    
-    // High metal coin ping 1
+
     const osc1 = this.ctx.createOscillator();
     const gain1 = this.ctx.createGain();
     osc1.type = 'sine';
     osc1.frequency.setValueAtTime(1400, now);
     osc1.frequency.exponentialRampToValueAtTime(1800, now + 0.04);
-    gain1.gain.setValueAtTime(0.2, now);
+    gain1.gain.setValueAtTime(0.22, now);
     gain1.gain.exponentialRampToValueAtTime(0.001, now + 0.25);
     osc1.connect(gain1);
     gain1.connect(this.ctx.destination);
     osc1.start(now);
     osc1.stop(now + 0.25);
 
-    // High metal coin ping 2 (delayed slightly)
     const osc2 = this.ctx.createOscillator();
     const gain2 = this.ctx.createGain();
     osc2.type = 'sine';
     osc2.frequency.setValueAtTime(2200, now + 0.05);
-    gain2.gain.setValueAtTime(0.16, now + 0.05);
+    gain2.gain.setValueAtTime(0.18, now + 0.05);
     gain2.gain.exponentialRampToValueAtTime(0.001, now + 0.35);
     osc2.connect(gain2);
     gain2.connect(this.ctx.destination);
@@ -118,7 +147,7 @@ class SoundManager {
     if (!this.ctx) return;
 
     const now = this.ctx.currentTime;
-    const notes = [440, 554, 659]; // A major arpeggio
+    const notes = [440, 554, 659];
     notes.forEach((freq, idx) => {
       if (!this.ctx) return;
       const osc = this.ctx.createOscillator();
@@ -172,7 +201,7 @@ class SoundManager {
   }
 
   /**
-   * Customer Eating Chomp
+   * Customer Eating Chomp & "বাহ!"
    */
   public playEatChomp() {
     if (this.isMuted) return;
@@ -195,6 +224,11 @@ class SoundManager {
 
     osc.start(now);
     osc.stop(now + 0.08);
+
+    // Random Bengali compliment
+    if (Math.random() > 0.6) {
+      this.speakBengali('বাহ! খাসা হইছে!');
+    }
   }
 
   /**
@@ -232,7 +266,7 @@ class SoundManager {
     if (!this.ctx) return;
 
     const now = this.ctx.currentTime;
-    const notes = [523.25, 659.25, 783.99, 1046.5]; // C5, E5, G5, C6
+    const notes = [523.25, 659.25, 783.99, 1046.5];
     notes.forEach((freq, idx) => {
       if (!this.ctx) return;
       const osc = this.ctx.createOscillator();
@@ -254,7 +288,7 @@ class SoundManager {
   }
 
   /**
-   * Rickshaw Double Bell Tring-Tring!
+   * Rickshaw Double Bell Tring-Tring + Dhaka Rickshaw Horn!
    */
   public playRickshawBell() {
     if (this.isMuted) return;
@@ -279,6 +313,11 @@ class SoundManager {
       osc.start(startTime);
       osc.stop(startTime + 0.12);
     });
+
+    // Voice callout
+    setTimeout(() => {
+      this.speakBengali('এই রিকশা! মামা সাইড দেন!');
+    }, 200);
   }
 }
 

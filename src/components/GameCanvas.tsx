@@ -3,9 +3,8 @@ import { RestaurantScene } from '../3d/RestaurantScene';
 import { FoodType, UpgradeStationPad, DiningTable, Customer, CashPile, MamaStaff } from '../types/game';
 
 interface GameCanvasProps {
-  playerPosition: { x: number; z: number };
-  playerAngle: number;
-  isMoving: boolean;
+  inputVector: { vx: number; vz: number };
+  playerSpeed: number;
   playerStack: FoodType[];
   unlockedStations: FoodType[];
   tables: DiningTable[];
@@ -15,13 +14,12 @@ interface GameCanvasProps {
   warmerStock: Record<FoodType, number>;
   customers: Customer[];
   staffEntities: MamaStaff[];
-  playerSpeedRatio: number;
+  onSyncPlayerPos: (x: number, z: number) => void;
 }
 
 export function GameCanvas({
-  playerPosition,
-  playerAngle,
-  isMoving,
+  inputVector,
+  playerSpeed,
   playerStack,
   unlockedStations,
   tables,
@@ -31,7 +29,7 @@ export function GameCanvas({
   warmerStock,
   customers,
   staffEntities,
-  playerSpeedRatio,
+  onSyncPlayerPos,
 }: GameCanvasProps) {
   const mountRef = useRef<HTMLDivElement>(null);
   const sceneRef = useRef<RestaurantScene | null>(null);
@@ -42,23 +40,31 @@ export function GameCanvas({
     const scene = new RestaurantScene(mountRef.current);
     sceneRef.current = scene;
 
+    // Sync loop for game engine interactions (15 times per second)
+    const interval = setInterval(() => {
+      if (sceneRef.current) {
+        onSyncPlayerPos(sceneRef.current.playerPos.x, sceneRef.current.playerPos.y);
+      }
+    }, 66);
+
     return () => {
+      clearInterval(interval);
       scene.dispose();
       sceneRef.current = null;
     };
-  }, []);
+  }, [onSyncPlayerPos]);
 
-  // Update Player position & walk state
+  // Update movement inputs into Three.js physics directly
   useEffect(() => {
     if (!sceneRef.current) return;
-    sceneRef.current.updatePlayer(
-      playerPosition.x,
-      playerPosition.z,
-      playerAngle,
-      isMoving,
-      playerSpeedRatio
-    );
-  }, [playerPosition, playerAngle, isMoving, playerSpeedRatio]);
+    sceneRef.current.setMovementInput(inputVector.vx, inputVector.vz);
+  }, [inputVector]);
+
+  // Update player speed
+  useEffect(() => {
+    if (!sceneRef.current) return;
+    sceneRef.current.setPlayerSpeed(playerSpeed);
+  }, [playerSpeed]);
 
   // Sync cooking stations
   useEffect(() => {

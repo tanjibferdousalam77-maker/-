@@ -44,7 +44,7 @@ export function UpgradeDrawer({
         className="pointer-events-auto flex items-center gap-1.5 px-4 py-1.5 rounded-t-xl bg-slate-900/95 border-t border-x border-slate-700/80 text-amber-400 text-xs font-bold shadow-2xl backdrop-blur-md hover:text-amber-300 transition-colors"
       >
         {isOpen ? <ChevronDown className="w-3.5 h-3.5" /> : <ChevronUp className="w-3.5 h-3.5" />}
-        <span>{isOpen ? 'লুকান (Close)' : '⚡ দোকান আপগ্রেড ও কর্মী (Upgrades)'}</span>
+        <span>{isOpen ? 'Close' : '⚡ Restaurant Upgrades & Staff'}</span>
       </button>
 
       {/* Drawer Body */}
@@ -56,14 +56,14 @@ export function UpgradeDrawer({
               <div>
                 <div className="flex items-center gap-1.5 text-amber-400 mb-1">
                   <Zap className="w-3.5 h-3.5" />
-                  <span className="text-xs font-bold">গতি (Speed)</span>
+                  <span className="text-xs font-bold">Speed</span>
                 </div>
-                <div className="text-[11px] text-slate-400">লেভেল: {playerSpeedLevel}/5</div>
+                <div className="text-[11px] text-slate-400">Level: {playerSpeedLevel}/5</div>
               </div>
 
               {playerSpeedLevel >= 5 ? (
                 <div className="mt-2 text-center text-[11px] font-bold text-emerald-400 py-1 bg-emerald-950/40 rounded-lg">
-                  ম্যাক্স
+                  MAX
                 </div>
               ) : (
                 <button
@@ -85,14 +85,14 @@ export function UpgradeDrawer({
               <div>
                 <div className="flex items-center gap-1.5 text-cyan-400 mb-1">
                   <ShoppingBag className="w-3.5 h-3.5" />
-                  <span className="text-xs font-bold">ধারণক্ষমতা</span>
+                  <span className="text-xs font-bold">Capacity</span>
                 </div>
-                <div className="text-[11px] text-slate-400">{maxStackCapacity} টি নাস্তা</div>
+                <div className="text-[11px] text-slate-400">{maxStackCapacity} snacks</div>
               </div>
 
               {playerCapacityLevel >= 6 ? (
                 <div className="mt-2 text-center text-[11px] font-bold text-emerald-400 py-1 bg-emerald-950/40 rounded-lg">
-                  ম্যাক্স
+                  MAX
                 </div>
               ) : (
                 <button
@@ -114,10 +114,10 @@ export function UpgradeDrawer({
               <div>
                 <div className="flex items-center gap-1.5 text-rose-400 mb-1">
                   <Flame className="w-3.5 h-3.5" />
-                  <span className="text-xs font-bold">বাবুর্চি মামা</span>
+                  <span className="text-xs font-bold">Chef মামা</span>
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  {staff.chefLevel === 0 ? 'নিয়োগ নেই' : `লেভেল: ${staff.chefLevel}`}
+                  {staff.chefLevel === 0 ? 'Not Hired' : `Level: ${staff.chefLevel}`}
                 </div>
               </div>
 
@@ -130,7 +130,7 @@ export function UpgradeDrawer({
                     : 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
                 }`}
               >
-                {staff.chefLevel === 0 ? `নিয়োগ ৳${chefCost}` : `আপগ্রেড ৳${chefCost}`}
+                {staff.chefLevel === 0 ? `Hire ৳${chefCost}` : `Upgrade ৳${chefCost}`}
               </button>
             </div>
 
@@ -139,10 +139,10 @@ export function UpgradeDrawer({
               <div>
                 <div className="flex items-center gap-1.5 text-emerald-400 mb-1">
                   <UserCheck className="w-3.5 h-3.5" />
-                  <span className="text-xs font-bold">ওয়েটার মামা</span>
+                  <span className="text-xs font-bold">Waiter মামা</span>
                 </div>
                 <div className="text-[11px] text-slate-400">
-                  {staff.waiterLevel === 0 ? 'নিয়োগ নেই' : `লেভেল: ${staff.waiterLevel}`}
+                  {staff.waiterLevel === 0 ? 'Not Hired' : `Level: ${staff.waiterLevel}`}
                 </div>
               </div>
 
@@ -155,28 +155,28 @@ export function UpgradeDrawer({
                     : 'bg-slate-700/50 text-slate-500 cursor-not-allowed'
                 }`}
               >
-                {staff.waiterLevel === 0 ? `নিয়োগ ৳${waiterCost}` : `আপগ্রেড ৳${waiterCost}`}
+                {staff.waiterLevel === 0 ? `Hire ৳${waiterCost}` : `Upgrade ৳${waiterCost}`}
               </button>
             </div>
           </div>
 
           {/* Bottom Actions */}
           <div className="mt-3 pt-2.5 border-t border-slate-800 flex items-center justify-between text-xs text-slate-400">
-            <span>টিপ: মেঝেতে দাঁড়ানো সবুজ বৃত্তগুলোতে দাঁড়ালেও আনলক হবে!</span>
+            <span>Tip: Walk onto glowing circular pads on the floor to build stations!</span>
             {showConfirmReset ? (
               <div className="flex items-center gap-2">
-                <span className="text-rose-400 text-[11px]">নিশ্চিত?</span>
+                <span className="text-rose-400 text-[11px]">Confirm?</span>
                 <button
                   onClick={onResetGame}
                   className="px-2 py-0.5 rounded bg-rose-600 text-white font-bold text-[10px]"
                 >
-                  হ্যাঁ, রিসেট
+                  Yes, Reset
                 </button>
                 <button
                   onClick={() => setShowConfirmReset(false)}
                   className="px-2 py-0.5 rounded bg-slate-700 text-slate-300 text-[10px]"
                 >
-                  না
+                  Cancel
                 </button>
               </div>
             ) : (
@@ -185,7 +185,7 @@ export function UpgradeDrawer({
                 className="flex items-center gap-1 text-[11px] text-slate-500 hover:text-rose-400 transition-colors"
               >
                 <RotateCcw className="w-3 h-3" />
-                <span>নতুন করে শুরু</span>
+                <span>Reset Game</span>
               </button>
             )}
           </div>

@@ -1,0 +1,30 @@
+{
+  "id": "com.dhakasnack.ready",
+  "name": "Dhaka Snack Ready! (ঢাকা স্ন্যাকস রেডি)",
+  "short_name": "Snack Ready",
+  "description": "An isometric 3D arcade idle restaurant tycoon game set in Bangladesh. Fry and stack Puri, Singara, Samosa, and Jilapi, serve customers, hire Mama helpers, and expand your street food empire!",
+  "lang": "en",
+  "dir": "ltr",
+  "categories": ["games", "entertainment", "simulation"],
+  "start_url": "./index.html",
+  "scope": "./",
+  "display": "standalone",
+  "orientation": "portrait",
+  "background_color": "#181512",
+  "theme_color": "#059669",
+  "prefer_related_applications": false,
+  "icons": [
+    {
+      "src": "./assets/icon-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "./assets/icon-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}

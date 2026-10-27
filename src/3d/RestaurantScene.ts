@@ -17,12 +17,6 @@ import {
   createTrashBinMesh,
   createCashNoteMesh,
 } from './models';
-import { sounds } from '../audio/soundManager';
-
-export interface SceneCallbacks {
-  onCollectCash: (amount: number) => void;
-  onUpgradePadStep: (padId: string, deltaTaka: number) => void;
-}
 
 export class RestaurantScene {
   private container: HTMLDivElement;
@@ -36,8 +30,9 @@ export class RestaurantScene {
   // Camera damping target
   private cameraTarget: THREE.Vector3 = new THREE.Vector3(0, 0, 0);
 
-  // Entities
+  // Smooth Player Physics
   public playerGroup!: THREE.Group;
+  private playerTorso!: THREE.Mesh;
   private playerLeftLeg!: THREE.Mesh;
   private playerRightLeg!: THREE.Mesh;
   private playerLeftArm!: THREE.Mesh;
@@ -45,7 +40,15 @@ export class RestaurantScene {
   private playerStackAnchor!: THREE.Group;
   private playerStackMeshes: THREE.Group[] = [];
 
-  // Staff meshes map: staffId -> { group, legs, arms, stackAnchor, stackMeshes }
+  // Movement vectors
+  private inputVector = new THREE.Vector2(0, 0);
+  private currentVelocity = new THREE.Vector2(0, 0);
+  public playerPos = new THREE.Vector2(0, 0);
+  public playerAngle: number = 0;
+  public playerSpeed: number = 6.2;
+  private walkTime: number = 0;
+
+  // Entities
   private staffMeshes = new Map<
     string,
     {
@@ -59,7 +62,6 @@ export class RestaurantScene {
     }
   >();
 
-  // Customer meshes map: customerId -> { group, leftLeg, rightLeg, speechBubble, orderMesh }
   private customerMeshes = new Map<
     string,
     {
@@ -72,7 +74,6 @@ export class RestaurantScene {
     }
   >();
 
-  // Flying items (food flying into stack or to customers)
   private flyingItems: {
     mesh: THREE.Group;
     start: THREE.Vector3;
@@ -83,32 +84,21 @@ export class RestaurantScene {
     onComplete?: () => void;
   }[] = [];
 
-  // Cash notes map
   private cashMeshes = new Map<string, THREE.Group>();
-
-  // Stations map: foodType -> group
   private stationMeshes = new Map<
     FoodType,
     { group: THREE.Group; oilMesh: THREE.Mesh; warmerItems: THREE.Group[] }
   >();
-
-  // Table meshes map: tableId -> group
   private tableMeshes = new Map<
     number,
     { group: THREE.Group; dirtyDishesGroup: THREE.Group }
   >();
-
-  // Upgrade pads mesh map
   private upgradePadMeshes = new Map<
     string,
     { group: THREE.Group; ringMesh: THREE.Mesh; textTexture: THREE.CanvasTexture }
   >();
 
-  // Rickshaw
   private rickshawGroup: THREE.Group | null = null;
-  private trashBinGroup!: THREE.Group;
-
-  // Time & animations
   private clock = new THREE.Clock();
 
   constructor(container: HTMLDivElement) {
@@ -117,7 +107,6 @@ export class RestaurantScene {
   }
 
   private init() {
-    // 1. Software WebGL Probe
     this.isSoftwareGl = (() => {
       const gl = document.createElement('canvas').getContext('webgl2');
       if (!gl) return true;
@@ -128,14 +117,13 @@ export class RestaurantScene {
       return /SwiftShader|llvmpipe|softpipe|Software|Basic Render/i.test(gpu);
     })();
 
-    // 2. Renderer
     this.renderer = new THREE.WebGLRenderer({
       antialias: !this.isSoftwareGl,
       powerPreference: 'high-performance',
     });
     this.renderer.outputColorSpace = THREE.SRGBColorSpace;
     this.renderer.toneMapping = THREE.ACESFilmicToneMapping;
-    this.renderer.toneMappingExposure = 1.15;
+    this.renderer.toneMappingExposure = 1.2;
     this.renderer.setPixelRatio(
       this.isSoftwareGl ? 1 : Math.min(window.devicePixelRatio, 2)
     );
@@ -144,12 +132,10 @@ export class RestaurantScene {
     this.renderer.setSize(this.container.clientWidth, this.container.clientHeight);
     this.container.appendChild(this.renderer.domElement);
 
-    // 3. Scene
     this.scene = new THREE.Scene();
-    this.scene.background = new THREE.Color(0x181512); // Warm Dhaka night ambient
-    this.scene.fog = new THREE.Fog(0x181512, 35, 70);
+    this.scene.background = new THREE.Color(0x181512);
+    this.scene.fog = new THREE.Fog(0x181512, 36, 75);
 
-    // Studio Environment Reflections
     try {
       const pmremGenerator = new THREE.PMREMGenerator(this.renderer);
       this.scene.environment = pmremGenerator.fromScene(new RoomEnvironment(), 0.04).texture;
@@ -158,7 +144,6 @@ export class RestaurantScene {
       // Fallback
     }
 
-    // 4. Isometric Orthographic Camera
     const aspect = this.container.clientWidth / this.container.clientHeight;
     const frustumSize = 18;
     this.camera = new THREE.OrthographicCamera(
@@ -169,23 +154,20 @@ export class RestaurantScene {
       0.1,
       1000
     );
-    // True isometric angle: 45° azimuth, ~35.264° elevation
     this.camera.position.set(24, 28, 24);
     this.camera.lookAt(0, 0, 0);
 
-    // 5. Lighting
     this.setupLighting();
+    this.setupProfoundEnvironment();
 
-    // 6. Base Restaurant Environment
-    this.setupRestaurantEnvironment();
-
-    // 7. Player Mesh
+    // Player
     const playerParts = createCharacterMesh({
       role: 'player',
-      clothesColor: 0x0284c7, // Vibrant Dhaka blue polo
+      clothesColor: 0x0284c7,
       accessory: 'cap',
     });
     this.playerGroup = playerParts.group;
+    this.playerTorso = playerParts.torso;
     this.playerLeftLeg = playerParts.leftLeg;
     this.playerRightLeg = playerParts.rightLeg;
     this.playerLeftArm = playerParts.leftArm;
@@ -194,27 +176,24 @@ export class RestaurantScene {
     this.playerGroup.position.set(0, 0, 0);
     this.scene.add(this.playerGroup);
 
-    // 8. Order Counter & Register
+    // Front Register Counter
     const register = createCashRegisterMesh();
     register.position.set(0, 0, 4.5);
     this.scene.add(register);
 
-    // 9. Trash Bin
-    this.trashBinGroup = createTrashBinMesh();
-    this.trashBinGroup.position.set(-6.5, 0, 4.5);
-    this.scene.add(this.trashBinGroup);
+    // Trash Bin
+    const trashBin = createTrashBinMesh();
+    trashBin.position.set(-6.5, 0, 4.5);
+    this.scene.add(trashBin);
 
-    // 10. Start Animation Loop
     this.clock.start();
     this.animate();
 
-    // Resize listener
     window.addEventListener('resize', this.onWindowResize);
   }
 
   private setupLighting() {
-    // Warm key light
-    const keyLight = new THREE.DirectionalLight(0xfff5eb, 1.6);
+    const keyLight = new THREE.DirectionalLight(0xfff7ed, 1.7);
     keyLight.position.set(20, 35, 15);
     keyLight.castShadow = !this.isSoftwareGl;
     if (keyLight.castShadow) {
@@ -232,38 +211,35 @@ export class RestaurantScene {
     }
     this.scene.add(keyLight);
 
-    // Cool fill light (Hemisphere)
-    const hemiLight = new THREE.HemisphereLight(0xfffaed, 0x334155, 0.85);
+    const hemiLight = new THREE.HemisphereLight(0xfffaed, 0x1e293b, 0.85);
     hemiLight.position.set(0, 30, 0);
     this.scene.add(hemiLight);
 
-    // Warm ambient accent for appetizing food glow
-    const ambient = new THREE.AmbientLight(0xfef3c7, 0.4);
-    this.scene.add(ambient);
+    const warmAmbient = new THREE.AmbientLight(0xfef3c7, 0.45);
+    this.scene.add(warmAmbient);
   }
 
-  private setupRestaurantEnvironment() {
-    // Main Cafe Floor
+  private setupProfoundEnvironment() {
+    // Cafe Floor
     const floorGeo = new THREE.PlaneGeometry(36, 32);
     const floorMat = new THREE.MeshStandardMaterial({
-      color: 0xdfd7cf, // warm Bengali clay tiles
-      roughness: 0.65,
+      color: 0xdfd7cf,
+      roughness: 0.6,
     });
     const floor = new THREE.Mesh(floorGeo, floorMat);
     floor.rotation.x = -Math.PI / 2;
-    floor.position.set(0, 0, 0);
     floor.receiveShadow = true;
     this.scene.add(floor);
 
-    // Tile grid lines on floor
+    // Grid pattern
     const grid = new THREE.GridHelper(36, 36, 0xb8aba0, 0xd0c4b8);
     grid.position.y = 0.01;
     this.scene.add(grid);
 
-    // Outdoor street / sidewalk area (Positive Z side where customers enter and Rickshaw stops)
+    // Street area
     const streetGeo = new THREE.PlaneGeometry(38, 12);
     const streetMat = new THREE.MeshStandardMaterial({
-      color: 0x334155, // dark asphalt street
+      color: 0x334155,
       roughness: 0.85,
     });
     const street = new THREE.Mesh(streetGeo, streetMat);
@@ -272,6 +248,17 @@ export class RestaurantScene {
     street.receiveShadow = true;
     this.scene.add(street);
 
+    // Road white dashed lines
+    for (let x = -16; x <= 16; x += 4) {
+      const line = new THREE.Mesh(
+        new THREE.PlaneGeometry(2.0, 0.2),
+        new THREE.MeshBasicMaterial({ color: 0xffffff })
+      );
+      line.rotation.x = -Math.PI / 2;
+      line.position.set(x, -0.04, 14.5);
+      this.scene.add(line);
+    }
+
     // Sidewalk curb
     const curbMat = new THREE.MeshStandardMaterial({ color: 0x94a3b8, roughness: 0.7 });
     const curb = new THREE.Mesh(new THREE.BoxGeometry(38, 0.2, 0.6), curbMat);
@@ -279,39 +266,43 @@ export class RestaurantScene {
     curb.castShadow = true;
     this.scene.add(curb);
 
-    // Decorative Cafe Walls (Back wall & side partition, low height so view is never occluded)
-    const wallMat = new THREE.MeshStandardMaterial({
-      color: 0xe2e8f0,
-      roughness: 0.8,
-    });
-    // Back wall
-    const backWall = new THREE.Mesh(new THREE.BoxGeometry(36, 3.2, 0.4), wallMat);
-    backWall.position.set(0, 1.6, -15.8);
+    // Walls
+    const wallMat = new THREE.MeshStandardMaterial({ color: 0xe2e8f0, roughness: 0.8 });
+    const backWall = new THREE.Mesh(new THREE.BoxGeometry(36, 3.4, 0.4), wallMat);
+    backWall.position.set(0, 1.7, -15.8);
     backWall.castShadow = true;
-    backWall.receiveShadow = true;
     this.scene.add(backWall);
 
-    // Left wall
-    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.2, 24.6), wallMat);
-    leftWall.position.set(-17.8, 1.6, -3.5);
-    leftWall.castShadow = true;
+    const leftWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.4, 24.6), wallMat);
+    leftWall.position.set(-17.8, 1.7, -3.5);
     this.scene.add(leftWall);
 
-    // Right wall
-    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.2, 24.6), wallMat);
-    rightWall.position.set(17.8, 1.6, -3.5);
-    rightWall.castShadow = true;
+    const rightWall = new THREE.Mesh(new THREE.BoxGeometry(0.4, 3.4, 24.6), wallMat);
+    rightWall.position.set(17.8, 1.7, -3.5);
     this.scene.add(rightWall);
 
-    // Bengali Cafe Neon / Wooden Sign on back wall: "ঢাকা স্ন্যাকস রেডি"
+    // Main Cafe Signboard
     const signGroup = this.createRestaurantSignboard();
-    signGroup.position.set(0, 2.8, -15.5);
+    signGroup.position.set(0, 3.0, -15.5);
     this.scene.add(signGroup);
 
-    // Festive string fairy lights hanging across back wall
+    // Niche Dhaka Wall Sign 1: "চা খান, মাথা ঠান্ডা রাখুন"
+    this.createChaSign(-11, 2.8, -15.5);
+
+    // Niche Dhaka Wall Sign 2: "মামার স্পেশাল নাস্তা ও দুধ চা"
+    this.createSpecialMamaSign(11, 2.8, -15.5);
+
+    // Niche Dhaka Street Milestone Signboard: "ধানমন্ডি ৩২ ➔" & "শাহবাগ মোড় ➔"
+    this.createDhakaRoadSign(14, 0, 9.5);
+
+    // Street Lamp Posts with warm glowing cone lights
+    this.createStreetLamp(-15, 8.5);
+    this.createStreetLamp(15, 8.5);
+
+    // Fairy lights
     this.createFestiveFairyLights();
 
-    // Outdoor Street Trees along sidewalk
+    // Trees
     this.createStreetTree(-14, 12);
     this.createStreetTree(14, 12);
   }
@@ -323,7 +314,6 @@ export class RestaurantScene {
     canvas.height = 256;
     const ctx = canvas.getContext('2d')!;
 
-    // Background gradient wood/brass
     const grad = ctx.createLinearGradient(0, 0, 1024, 0);
     grad.addColorStop(0, '#78350f');
     grad.addColorStop(0.5, '#b45309');
@@ -331,21 +321,18 @@ export class RestaurantScene {
     ctx.fillStyle = grad;
     ctx.fillRect(0, 0, 1024, 256);
 
-    // Gold border
     ctx.strokeStyle = '#f59e0b';
     ctx.lineWidth = 14;
     ctx.strokeRect(10, 10, 1004, 236);
 
-    // Bengali Text
     ctx.fillStyle = '#ffffff';
-    ctx.font = 'bold 84px "Hind Siliguri", "Plus Jakarta Sans", sans-serif';
+    ctx.font = 'bold 80px "Plus Jakarta Sans", "Hind Siliguri", sans-serif';
     ctx.textAlign = 'center';
     ctx.textBaseline = 'middle';
-    ctx.fillText('ঢাকা স্ন্যাকস রেডি · DHAKA SNACK READY', 512, 100);
+    ctx.fillText('DHAKA SNACK READY', 512, 95);
 
-    // Subtitle
     ctx.fillStyle = '#fef08a';
-    ctx.font = '600 48px "Plus Jakarta Sans", sans-serif';
+    ctx.font = 'bold 50px "Hind Siliguri", sans-serif';
     ctx.fillText('গরম পুরি · ক্রিস্পি সিঙ্গারা · সমুচা · জিলাপি', 512, 185);
 
     const texture = new THREE.CanvasTexture(canvas);
@@ -355,9 +342,148 @@ export class RestaurantScene {
       roughness: 0.3,
       metalness: 0.2,
     });
-    const signMesh = new THREE.Mesh(new THREE.BoxGeometry(10, 2.4, 0.15), signMat);
+    const signMesh = new THREE.Mesh(new THREE.BoxGeometry(10.5, 2.5, 0.15), signMat);
     group.add(signMesh);
     return group;
+  }
+
+  // Niche sign: "চা খান, মাথা ঠান্ডা রাখুন" (Drink Cha, Keep a Cool Head)
+  private createChaSign(x: number, y: number, z: number) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 384;
+    canvas.height = 160;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#065f46';
+    ctx.fillRect(0, 0, 384, 160);
+    ctx.strokeStyle = '#34d399';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(4, 4, 376, 152);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 44px "Hind Siliguri", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('চা খান, মাথা ঠান্ডা রাখুন', 192, 70);
+
+    ctx.fillStyle = '#a7f3d0';
+    ctx.font = 'bold 28px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText('HOT SPICED MILK CHA', 192, 125);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(3.6, 1.5, 0.08),
+      new THREE.MeshStandardMaterial({ map: tex })
+    );
+    mesh.position.set(x, y, z);
+    this.scene.add(mesh);
+  }
+
+  // Niche sign: "মামার স্পেশাল নাস্তা ও দুধ চা"
+  private createSpecialMamaSign(x: number, y: number, z: number) {
+    const canvas = document.createElement('canvas');
+    canvas.width = 384;
+    canvas.height = 160;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#b45309';
+    ctx.fillRect(0, 0, 384, 160);
+    ctx.strokeStyle = '#fde047';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(4, 4, 376, 152);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 42px "Hind Siliguri", sans-serif';
+    ctx.textAlign = 'center';
+    ctx.fillText('মামার স্পেশাল নাস্তা', 192, 65);
+
+    ctx.fillStyle = '#fef08a';
+    ctx.font = 'bold 28px "Plus Jakarta Sans", sans-serif';
+    ctx.fillText("MAMA'S FAMOUS SNACKS", 192, 120);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const mesh = new THREE.Mesh(
+      new THREE.BoxGeometry(3.6, 1.5, 0.08),
+      new THREE.MeshStandardMaterial({ map: tex })
+    );
+    mesh.position.set(x, y, z);
+    this.scene.add(mesh);
+  }
+
+  // Niche Dhaka Road Signboard: "ধানমন্ডি ৩২" & "শাহবাগ মোড়"
+  private createDhakaRoadSign(x: number, y: number, z: number) {
+    const group = new THREE.Group();
+
+    // Post
+    const pole = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.06, 0.06, 2.8, 8),
+      new THREE.MeshStandardMaterial({ color: 0x334155, metalness: 0.8 })
+    );
+    pole.position.y = 1.4;
+    group.add(pole);
+
+    // Green directional sign
+    const canvas = document.createElement('canvas');
+    canvas.width = 384;
+    canvas.height = 192;
+    const ctx = canvas.getContext('2d')!;
+    ctx.fillStyle = '#047857';
+    ctx.fillRect(0, 0, 384, 192);
+    ctx.strokeStyle = '#ffffff';
+    ctx.lineWidth = 8;
+    ctx.strokeRect(4, 4, 376, 184);
+
+    ctx.fillStyle = '#ffffff';
+    ctx.font = 'bold 36px "Hind Siliguri", sans-serif';
+    ctx.textAlign = 'left';
+    ctx.fillText('➔ ধানমন্ডি ৩২ (Dhanmondi)', 20, 65);
+    ctx.fillText('➔ শাহবাগ মোড় (Shahbagh)', 20, 140);
+
+    const tex = new THREE.CanvasTexture(canvas);
+    tex.colorSpace = THREE.SRGBColorSpace;
+    const board = new THREE.Mesh(
+      new THREE.BoxGeometry(2.4, 1.2, 0.06),
+      new THREE.MeshStandardMaterial({ map: tex })
+    );
+    board.position.set(0, 2.3, 0);
+    board.rotation.y = -Math.PI / 4;
+    group.add(board);
+
+    group.position.set(x, y, z);
+    this.scene.add(group);
+  }
+
+  private createStreetLamp(x: number, z: number) {
+    const group = new THREE.Group();
+    const metalMat = new THREE.MeshStandardMaterial({ color: 0x1e293b, metalness: 0.8 });
+
+    const post = new THREE.Mesh(new THREE.CylinderGeometry(0.08, 0.12, 4.2, 8), metalMat);
+    post.position.y = 2.1;
+    group.add(post);
+
+    const arm = new THREE.Mesh(new THREE.CylinderGeometry(0.05, 0.05, 1.0, 8), metalMat);
+    arm.position.set(0.4, 4.1, 0);
+    arm.rotation.z = Math.PI / 3;
+    group.add(arm);
+
+    // Lantern
+    const lantern = new THREE.Mesh(
+      new THREE.CylinderGeometry(0.2, 0.3, 0.4, 8),
+      new THREE.MeshStandardMaterial({
+        color: 0xfef08a,
+        emissive: 0xf59e0b,
+        emissiveIntensity: 0.9,
+      })
+    );
+    lantern.position.set(0.8, 3.8, 0);
+    group.add(lantern);
+
+    // Soft warm pointlight
+    const light = new THREE.PointLight(0xfff1aa, 1.2, 12);
+    light.position.set(0.8, 3.8, 0);
+    group.add(light);
+
+    group.position.set(x, 0, z);
+    this.scene.add(group);
   }
 
   private createFestiveFairyLights() {
@@ -373,23 +499,20 @@ export class RestaurantScene {
           roughness: 0.2,
         })
       );
-      // Slight catenary sag
       const sag = Math.sin(((i + 14) / 28) * Math.PI) * 0.4;
-      bulb.position.set(i, 3.4 - sag, -15.4);
+      bulb.position.set(i, 3.5 - sag, -15.4);
       this.scene.add(bulb);
     }
   }
 
   private createStreetTree(x: number, z: number) {
     const group = new THREE.Group();
-    // Trunk
     const trunkMat = new THREE.MeshStandardMaterial({ color: 0x451a03, roughness: 0.9 });
     const trunk = new THREE.Mesh(new THREE.CylinderGeometry(0.25, 0.35, 2.5, 8), trunkMat);
     trunk.position.y = 1.25;
     trunk.castShadow = true;
     group.add(trunk);
 
-    // Foliage
     const leafMat = new THREE.MeshStandardMaterial({ color: 0x15803d, roughness: 0.8 });
     const leaf1 = new THREE.Mesh(new THREE.ConeGeometry(1.6, 2.2, 7), leafMat);
     leaf1.position.y = 2.8;
@@ -405,7 +528,6 @@ export class RestaurantScene {
     this.scene.add(group);
   }
 
-  // Window resize handler
   private onWindowResize = () => {
     if (!this.container || this.isDestroyed) return;
     const width = this.container.clientWidth;
@@ -423,10 +545,17 @@ export class RestaurantScene {
   };
 
   /**
-   * Sync Cooking Stations with state
+   * Set Input vector directly for fluid 60FPS physics
    */
+  public setMovementInput(vx: number, vz: number) {
+    this.inputVector.set(vx, vz);
+  }
+
+  public setPlayerSpeed(speed: number) {
+    this.playerSpeed = speed;
+  }
+
   public syncStations(unlockedStations: FoodType[]) {
-    // Pre-defined station layout positions
     const stationPositions: Record<FoodType, { x: number; z: number }> = {
       puri: { x: -9.5, z: -10 },
       singara: { x: -4.5, z: -10 },
@@ -446,9 +575,6 @@ export class RestaurantScene {
     });
   }
 
-  /**
-   * Sync Dining Tables with state
-   */
   public syncTables(tables: DiningTable[]) {
     tables.forEach((table) => {
       if (table.isUnlocked && !this.tableMeshes.has(table.id)) {
@@ -457,11 +583,10 @@ export class RestaurantScene {
         this.scene.add(group);
 
         const dirtyDishesGroup = new THREE.Group();
-        dirtyDishesGroup.position.set(0, 1.05, 0);
+        dirtyDishesGroup.position.set(0, 1.06, 0);
         dirtyDishesGroup.visible = false;
         group.add(dirtyDishesGroup);
 
-        // Add dirty plate tray
         const plate = new THREE.Mesh(
           new THREE.CylinderGeometry(0.4, 0.35, 0.05, 12),
           new THREE.MeshStandardMaterial({ color: 0x94a3b8 })
@@ -471,7 +596,6 @@ export class RestaurantScene {
         this.tableMeshes.set(table.id, { group, dirtyDishesGroup });
       }
 
-      // Update dirty dishes visibility
       const tableEntry = this.tableMeshes.get(table.id);
       if (tableEntry) {
         tableEntry.dirtyDishesGroup.visible = table.hasDirtyDishes;
@@ -479,22 +603,15 @@ export class RestaurantScene {
     });
   }
 
-  /**
-   * Sync Rickshaw Delivery Station
-   */
   public syncRickshaw(isUnlocked: boolean) {
     if (isUnlocked && !this.rickshawGroup) {
       this.rickshawGroup = createRickshawMesh();
-      // Parked outside at delivery window
       this.rickshawGroup.position.set(13.5, 0, 4.5);
       this.rickshawGroup.rotation.y = -Math.PI / 2;
       this.scene.add(this.rickshawGroup);
     }
   }
 
-  /**
-   * Sync Upgrade Pads on Floor
-   */
   public syncUpgradePads(pads: UpgradeStationPad[]) {
     pads.forEach((pad) => {
       let entry = this.upgradePadMeshes.get(pad.id);
@@ -503,7 +620,6 @@ export class RestaurantScene {
         group.name = `upgrade_pad_${pad.id}`;
         group.position.set(pad.position.x, 0.02, pad.position.z);
 
-        // Outer glow ring
         const ringGeo = new THREE.RingGeometry(pad.radius * 0.85, pad.radius, 32);
         const ringMat = new THREE.MeshBasicMaterial({
           color: 0x10b981,
@@ -515,7 +631,6 @@ export class RestaurantScene {
         ringMesh.rotation.x = -Math.PI / 2;
         group.add(ringMesh);
 
-        // Inner circle
         const innerGeo = new THREE.CircleGeometry(pad.radius * 0.84, 32);
         const innerMat = new THREE.MeshBasicMaterial({
           color: 0x064e3b,
@@ -527,7 +642,6 @@ export class RestaurantScene {
         innerMesh.rotation.x = -Math.PI / 2;
         group.add(innerMesh);
 
-        // Canvas for pad label (e.g. "Table 2 · ৳ 150")
         const canvas = document.createElement('canvas');
         canvas.width = 512;
         canvas.height = 512;
@@ -558,13 +672,11 @@ export class RestaurantScene {
           return;
         }
 
-        // Redraw canvas text with remaining cost
         const remaining = pad.cost - pad.paid;
         const canvas = entry.textTexture.image as HTMLCanvasElement;
         const ctx = canvas.getContext('2d')!;
         ctx.clearRect(0, 0, 512, 512);
 
-        // Background progress fill
         const progress = Math.min(pad.paid / pad.cost, 1);
         ctx.beginPath();
         ctx.arc(256, 256, 240, -Math.PI / 2, -Math.PI / 2 + progress * Math.PI * 2);
@@ -572,34 +684,30 @@ export class RestaurantScene {
         ctx.lineWidth = 28;
         ctx.stroke();
 
-        // Texts
         ctx.textAlign = 'center';
         ctx.textBaseline = 'middle';
 
+        // English Title (with food name in Bengali if station)
         ctx.fillStyle = '#ffffff';
-        ctx.font = 'bold 54px "Hind Siliguri", "Plus Jakarta Sans"';
-        ctx.fillText(pad.titleBn, 256, 190);
+        ctx.font = 'bold 50px "Plus Jakarta Sans", sans-serif';
+        ctx.fillText(pad.titleEn, 256, 185);
 
+        // Taka Cost
         ctx.fillStyle = '#fef08a';
-        ctx.font = 'bold 64px "JetBrains Mono", monospace';
-        ctx.fillText(`৳ ${remaining}`, 256, 270);
+        ctx.font = 'bold 68px "JetBrains Mono", monospace';
+        ctx.fillText(`৳ ${remaining}`, 256, 265);
 
-        ctx.fillStyle = '#cbd5e1';
-        ctx.font = '500 36px "Plus Jakarta Sans"';
-        ctx.fillText(pad.titleEn, 256, 340);
+        ctx.fillStyle = '#a7f3d0';
+        ctx.font = '600 36px "Hind Siliguri", sans-serif';
+        ctx.fillText(pad.titleBn, 256, 335);
 
         entry.textTexture.needsUpdate = true;
       }
     });
   }
 
-  /**
-   * Sync Cash Notes dropped on floor
-   */
   public syncCash(cashPiles: CashPile[]) {
     const currentIds = new Set(cashPiles.map((c) => c.id));
-
-    // Remove collected notes
     for (const [id, mesh] of this.cashMeshes.entries()) {
       if (!currentIds.has(id)) {
         this.scene.remove(mesh);
@@ -607,7 +715,6 @@ export class RestaurantScene {
       }
     }
 
-    // Add new notes
     cashPiles.forEach((cash) => {
       if (!this.cashMeshes.has(cash.id) && !cash.collected) {
         const mesh = createCashNoteMesh();
@@ -619,25 +726,20 @@ export class RestaurantScene {
     });
   }
 
-  /**
-   * Sync Warmers: Show visual items sitting on warmer counters
-   */
   public syncWarmerStock(warmerStock: Record<FoodType, number>) {
     Object.entries(warmerStock).forEach(([typeStr, count]) => {
       const type = typeStr as FoodType;
       const station = this.stationMeshes.get(type);
       if (!station) return;
 
-      // Adjust mesh count on warmer
       while (station.warmerItems.length < count) {
         const foodMesh = createFoodMesh(type);
         const idx = station.warmerItems.length;
-        // Arrange in a neat 2x3 or vertical stack
         const row = Math.floor(idx / 3);
         const col = idx % 3;
         foodMesh.position.set(
-          0.3 + col * 0.22,
-          1.15 + row * 0.15,
+          0.35 + col * 0.22,
+          1.18 + row * 0.15,
           -0.25 + (idx % 2) * 0.4
         );
         station.group.add(foodMesh);
@@ -651,15 +753,11 @@ export class RestaurantScene {
     });
   }
 
-  /**
-   * Sync Player Stack: Attach items to the player's carry stack with wobble kinematics
-   */
   public syncPlayerStack(stack: FoodType[]) {
     while (this.playerStackMeshes.length < stack.length) {
       const idx = this.playerStackMeshes.length;
       const type = stack[idx];
       const foodMesh = createFoodMesh(type);
-      // Stack vertically
       foodMesh.position.set(0, idx * 0.22, 0);
       this.playerStackAnchor.add(foodMesh);
       this.playerStackMeshes.push(foodMesh);
@@ -670,52 +768,21 @@ export class RestaurantScene {
       if (item) this.playerStackAnchor.remove(item);
     }
 
-    // Extended arms when carrying food!
     const isCarrying = stack.length > 0;
     const targetArmRotX = isCarrying ? -Math.PI / 2.5 : 0;
     this.playerLeftArm.rotation.x = targetArmRotX;
     this.playerRightArm.rotation.x = targetArmRotX;
   }
 
-  /**
-   * Spawn a flying item animation (e.g. from warmer to player, or from player to counter)
-   */
-  public triggerFlyingFood(
-    type: FoodType,
-    from: THREE.Vector3,
-    to: THREE.Vector3,
-    onComplete?: () => void
+  public syncCustomers(
+    customers: {
+      id: string;
+      position: { x: number; z: number };
+      state: string;
+      order: { itemType: FoodType; required: number; delivered: number };
+    }[]
   ) {
-    const mesh = createFoodMesh(type);
-    mesh.position.copy(from);
-    this.scene.add(mesh);
-
-    this.flyingItems.push({
-      mesh,
-      start: from.clone(),
-      end: to.clone(),
-      peakY: Math.max(from.y, to.y) + 1.2,
-      progress: 0,
-      duration: 0.28,
-      onComplete: () => {
-        this.scene.remove(mesh);
-        onComplete?.();
-      },
-    });
-  }
-
-  /**
-   * Sync Customers in the scene
-   */
-  public syncCustomers(customers: {
-    id: string;
-    position: { x: number; z: number };
-    state: string;
-    order: { itemType: FoodType; required: number; delivered: number };
-  }[]) {
     const currentIds = new Set(customers.map((c) => c.id));
-
-    // Remove departed
     for (const [id, entry] of this.customerMeshes.entries()) {
       if (!currentIds.has(id)) {
         this.scene.remove(entry.group);
@@ -723,7 +790,6 @@ export class RestaurantScene {
       }
     }
 
-    // Add or update
     customers.forEach((c) => {
       let entry = this.customerMeshes.get(c.id);
       if (!entry) {
@@ -734,7 +800,6 @@ export class RestaurantScene {
           clothesColor: color,
         });
 
-        // Create Order Speech Bubble above head
         const canvas = document.createElement('canvas');
         canvas.width = 256;
         canvas.height = 160;
@@ -751,7 +816,6 @@ export class RestaurantScene {
           })
         );
         bubblePlane.position.set(0, 2.3, 0);
-        // Face isometric camera
         bubblePlane.rotation.x = -Math.PI / 4;
         bubblePlane.rotation.y = Math.PI / 4;
         speechBubbleGroup.add(bubblePlane);
@@ -770,7 +834,6 @@ export class RestaurantScene {
         this.customerMeshes.set(c.id, entry);
       }
 
-      // Update position
       const dx = c.position.x - entry.group.position.x;
       const dz = c.position.z - entry.group.position.z;
       const isMoving = Math.hypot(dx, dz) > 0.05;
@@ -786,13 +849,12 @@ export class RestaurantScene {
         entry.rightLeg.rotation.x = 0;
       }
 
-      // Update Order Speech Bubble
+      // Order Bubble in clean English with Bengali Food Name
       const canvas = entry.speechCanvas;
       const ctx = canvas.getContext('2d')!;
       ctx.clearRect(0, 0, 256, 160);
 
       if (c.state === 'WAITING') {
-        // Draw Speech Bubble rounded box
         ctx.fillStyle = '#ffffff';
         ctx.strokeStyle = '#0284c7';
         ctx.lineWidth = 6;
@@ -801,7 +863,6 @@ export class RestaurantScene {
         ctx.fill();
         ctx.stroke();
 
-        // Food Name & Remaining
         const remaining = c.order.required - c.order.delivered;
         const def = FOOD_DEFINITIONS[c.order.itemType];
         ctx.fillStyle = def.color;
@@ -815,7 +876,6 @@ export class RestaurantScene {
 
         entry.speechBubbleGroup.visible = true;
       } else if (c.state === 'EATING') {
-        // Eating bubble: "Nom Nom!" / "মজাদার!"
         ctx.fillStyle = '#fef08a';
         ctx.strokeStyle = '#d97706';
         ctx.lineWidth = 6;
@@ -825,12 +885,12 @@ export class RestaurantScene {
         ctx.stroke();
 
         ctx.fillStyle = '#78350f';
-        ctx.font = 'bold 48px "Hind Siliguri", sans-serif';
+        ctx.font = 'bold 44px "Hind Siliguri", sans-serif';
         ctx.textAlign = 'center';
-        ctx.fillText('মজাদার!', 128, 75);
+        ctx.fillText('বাহ! খাসা!', 128, 75);
 
-        ctx.font = 'bold 36px "Plus Jakarta Sans", sans-serif';
-        ctx.fillText('Delicious!', 128, 120);
+        ctx.font = 'bold 32px "Plus Jakarta Sans", sans-serif';
+        ctx.fillText('Tasty!', 128, 120);
 
         entry.speechBubbleGroup.visible = true;
       } else {
@@ -840,18 +900,15 @@ export class RestaurantScene {
     });
   }
 
-  /**
-   * Sync Hired Staff (Mama Workers)
-   */
-  public syncStaff(staffList: {
-    id: string;
-    role: 'CHEF' | 'WAITER' | 'CLEANER';
-    position: { x: number; z: number };
-    stack: FoodType[];
-  }[]) {
+  public syncStaff(
+    staffList: {
+      id: string;
+      role: 'CHEF' | 'WAITER' | 'CLEANER';
+      position: { x: number; z: number };
+      stack: FoodType[];
+    }[]
+  ) {
     const currentIds = new Set(staffList.map((s) => s.id));
-
-    // Remove retired staff
     for (const [id, entry] of this.staffMeshes.entries()) {
       if (!currentIds.has(id)) {
         this.scene.remove(entry.group);
@@ -864,7 +921,7 @@ export class RestaurantScene {
       if (!entry) {
         const parts = createCharacterMesh({
           role: s.role === 'CHEF' ? 'chef' : 'waiter',
-          clothesColor: s.role === 'CHEF' ? 0xffffff : 0x15803d, // Green for waiter mama
+          clothesColor: s.role === 'CHEF' ? 0xffffff : 0x15803d,
         });
         this.scene.add(parts.group);
 
@@ -880,7 +937,6 @@ export class RestaurantScene {
         this.staffMeshes.set(s.id, entry);
       }
 
-      // Update position & walk cycle
       const dx = s.position.x - entry.group.position.x;
       const dz = s.position.z - entry.group.position.z;
       const isMoving = Math.hypot(dx, dz) > 0.05;
@@ -896,7 +952,6 @@ export class RestaurantScene {
         entry.rightLeg.rotation.x = 0;
       }
 
-      // Sync carry stack
       while (entry.stackMeshes.length < s.stack.length) {
         const idx = entry.stackMeshes.length;
         const foodMesh = createFoodMesh(s.stack[idx]);
@@ -909,7 +964,6 @@ export class RestaurantScene {
         if (item) entry.stackAnchor.remove(item);
       }
 
-      // Arm pose
       const isCarrying = s.stack.length > 0;
       entry.leftArm.rotation.x = isCarrying ? -Math.PI / 2.5 : 0;
       entry.rightArm.rotation.x = isCarrying ? -Math.PI / 2.5 : 0;
@@ -917,98 +971,97 @@ export class RestaurantScene {
   }
 
   /**
-   * Update Player position, rotation, and walk cycle
+   * High performance render and physics animation loop
    */
-  public updatePlayer(
-    x: number,
-    z: number,
-    moveAngle: number | null,
-    isMoving: boolean,
-    speedRatio: number = 1
-  ) {
-    this.playerGroup.position.set(x, 0, z);
+  private animate = () => {
+    if (this.isDestroyed) return;
 
-    if (moveAngle !== null) {
-      this.playerGroup.rotation.y = moveAngle;
-    }
+    this.frameId = requestAnimationFrame(this.animate);
+    const delta = Math.min(this.clock.getDelta(), 0.1);
+    const elapsedTime = this.clock.getElapsedTime();
 
-    const t = this.clock.getElapsedTime();
+    // 1. Silky Smooth Player Movement Physics
+    const targetVx = this.inputVector.x * this.playerSpeed;
+    const targetVz = this.inputVector.y * this.playerSpeed;
+
+    // Smooth velocity interpolation (inertia & momentum)
+    this.currentVelocity.x = THREE.MathUtils.damp(this.currentVelocity.x, targetVx, 18, delta);
+    this.currentVelocity.y = THREE.MathUtils.damp(this.currentVelocity.y, targetVz, 18, delta);
+
+    const speed = this.currentVelocity.length();
+    const isMoving = speed > 0.2;
+
     if (isMoving) {
-      const walkFreq = t * 14 * speedRatio;
-      this.playerLeftLeg.rotation.x = Math.sin(walkFreq) * 0.65;
-      this.playerRightLeg.rotation.x = -Math.sin(walkFreq) * 0.65;
+      this.playerPos.x += this.currentVelocity.x * delta;
+      this.playerPos.y += this.currentVelocity.y * delta;
 
-      // Stack wobble kinematics!
+      // Soft layout boundaries
+      this.playerPos.x = Math.max(-16.5, Math.min(16.5, this.playerPos.x));
+      this.playerPos.y = Math.max(-13.5, Math.min(8.2, this.playerPos.y));
+
+      // Avoid counter penetration
+      if (this.playerPos.y >= 3.8 && this.playerPos.y <= 5.2 && Math.abs(this.playerPos.x) < 2.5) {
+        this.playerPos.y = 3.75;
+      }
+
+      // Smooth rotational damping (turn smoothly, no sudden snaps!)
+      const targetAngle = Math.atan2(this.currentVelocity.x, this.currentVelocity.y);
+      let diff = targetAngle - this.playerAngle;
+      while (diff < -Math.PI) diff += Math.PI * 2;
+      while (diff > Math.PI) diff -= Math.PI * 2;
+      this.playerAngle += diff * (1 - Math.exp(-18 * delta));
+
+      // Walking leg swing & torso banking
+      this.walkTime += delta * 14 * (speed / this.playerSpeed);
+      this.playerLeftLeg.rotation.x = Math.sin(this.walkTime) * 0.65;
+      this.playerRightLeg.rotation.x = -Math.sin(this.walkTime) * 0.65;
+
+      // Subtle torso lean into movement direction
+      this.playerTorso.rotation.z = -this.currentVelocity.x * 0.02;
+
+      // Stack wobble kinematics
       if (this.playerStackMeshes.length > 0) {
-        const wobbleZ = Math.sin(t * 12) * 0.08;
-        const wobbleX = Math.cos(t * 10) * 0.06;
+        const wobbleZ = Math.sin(this.walkTime * 0.8) * 0.07;
+        const wobbleX = Math.cos(this.walkTime * 0.8) * 0.05;
         this.playerStackAnchor.rotation.set(wobbleX, 0, wobbleZ);
       }
     } else {
       this.playerLeftLeg.rotation.x = 0;
       this.playerRightLeg.rotation.x = 0;
+      this.playerTorso.rotation.z = 0;
       if (this.playerStackMeshes.length > 0) {
         this.playerStackAnchor.rotation.set(0, 0, 0);
       }
     }
 
-    // Camera follow player with smooth exponential damping
-    this.cameraTarget.lerp(new THREE.Vector3(x, 0, z), 0.08);
+    this.playerGroup.position.set(this.playerPos.x, 0, this.playerPos.y);
+    this.playerGroup.rotation.y = this.playerAngle;
+
+    // 2. Camera smooth follow (2nd order exponential damping)
+    this.cameraTarget.x = THREE.MathUtils.damp(this.cameraTarget.x, this.playerPos.x, 8, delta);
+    this.cameraTarget.z = THREE.MathUtils.damp(this.cameraTarget.z, this.playerPos.y, 8, delta);
     this.camera.position.set(
       this.cameraTarget.x + 24,
       this.cameraTarget.y + 28,
       this.cameraTarget.z + 24
     );
     this.camera.lookAt(this.cameraTarget);
-  }
 
-  /**
-   * Animation & Render Loop
-   */
-  private animate = () => {
-    if (this.isDestroyed) return;
-
-    this.frameId = requestAnimationFrame(this.animate);
-    const delta = this.clock.getDelta();
-    const elapsedTime = this.clock.getElapsedTime();
-
-    // 1. Animate bubbling oil vats in active fryers
+    // 3. Animate bubbling oil vats
     this.stationMeshes.forEach((station) => {
-      station.oilMesh.position.y = 1.05 + Math.sin(elapsedTime * 6) * 0.02;
+      station.oilMesh.position.y = 1.08 + Math.sin(elapsedTime * 6) * 0.02;
     });
 
-    // 2. Animate Upgrade Pad outer rings pulsing gently
+    // 4. Animate Upgrade Pad outer rings
     this.upgradePadMeshes.forEach((pad) => {
       const scale = 1 + Math.sin(elapsedTime * 4) * 0.04;
       pad.ringMesh.scale.set(scale, scale, 1);
     });
 
-    // 3. Animate flying items
-    for (let i = this.flyingItems.length - 1; i >= 0; i--) {
-      const item = this.flyingItems[i];
-      item.progress += delta / item.duration;
-      if (item.progress >= 1) {
-        item.mesh.position.copy(item.end);
-        item.onComplete?.();
-        this.flyingItems.splice(i, 1);
-      } else {
-        const p = item.progress;
-        // Parabolic arc interpolation
-        const currentX = THREE.MathUtils.lerp(item.start.x, item.end.x, p);
-        const currentZ = THREE.MathUtils.lerp(item.start.z, item.end.z, p);
-        const arcY = 4 * item.peakY * p * (1 - p) + (1 - p) * item.start.y + p * item.end.y;
-        item.mesh.position.set(currentX, arcY, currentZ);
-        item.mesh.rotation.y += delta * 12;
-      }
-    }
-
-    // 4. Render
+    // 5. Render
     this.renderer.render(this.scene, this.camera);
   };
 
-  /**
-   * Cleanup and dispose WebGL resources
-   */
   public dispose() {
     this.isDestroyed = true;
     cancelAnimationFrame(this.frameId);
