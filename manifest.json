@@ -1,0 +1,12 @@
+{
+  "background_color": "#ffffff",
+  "description": "An isometric 3D arcade idle restaurant tycoon game set in Bangladesh. Fry and stack Puri, Singara, Samosa, and Jilapi, serve customers, hire Mama helpers, and expand your street food empire!",
+  "dir": "ltr",
+  "display": "standalone",
+  "name": "Singara",
+  "orientation": "any",
+  "scope": "/",
+  "short_name": "lol",
+  "start_url": "/",
+  "theme_color": "#ffffff"
+}
